@@ -6,7 +6,6 @@ pub const GAME_TITLE: &str = " 2048 ";
 pub struct TurnResult {
     // Merged cells for UI highlighting.
     pub merged: [[bool; BOARD_SIZE]; BOARD_SIZE],
-    pub score_delta: u32,
 }
 
 #[derive(Default)]
@@ -45,60 +44,42 @@ impl Game {
     // ========================================================================
 
     pub fn move_up(&mut self) -> TurnResult {
-        let results = self.board.move_up();
-        self.process_move_results(&results)
+        let outcome = self.board.move_up();
+        self.handle_outcome(outcome)
     }
 
     pub fn move_down(&mut self) -> TurnResult {
-        let results = self.board.move_down();
-        self.process_move_results(&results)
+        let outcome = self.board.move_down();
+        self.handle_outcome(outcome)
     }
 
     pub fn move_left(&mut self) -> TurnResult {
-        let results = self.board.move_left();
-        self.process_move_results(&results)
+        let outcome = self.board.move_left();
+        self.handle_outcome(outcome)
     }
 
     pub fn move_right(&mut self) -> TurnResult {
-        let results = self.board.move_right();
-        self.process_move_results(&results)
+        let outcome = self.board.move_right();
+        self.handle_outcome(outcome)
     }
 
     // ========================================================================
     // Helpers
     // ========================================================================
 
-    fn process_move_results(
+    fn handle_outcome(
         &mut self,
-        results: &[crate::board::MergeResult],
+        outcome: crate::board::MoveOutcome,
     ) -> TurnResult {
-        let mut board_changed = false;
-        let mut report = TurnResult::default();
-
-        for result in results {
-            if result.board_changed {
-                board_changed = true;
-            }
-
-            // Score is the sum of the resulting values of any merges.
-            // merged_sources contains the input values (e.g. two 2s merging puts one 2 here).
-            // So we add value * 2.
-            for &source_value in result.merged_sources.iter() {
-                let points = source_value * 2;
-                self.score += points;
-                report.score_delta += points;
-            }
-
-            for &(row, col) in &result.merged_positions {
-                report.merged[row][col] = true;
-            }
-        }
-
-        if board_changed {
+        if outcome.board_changed {
             self.board.spawn_tile();
         }
 
-        report
+        self.score += outcome.score_delta;
+
+        TurnResult {
+            merged: outcome.merged,
+        }
     }
 
     // ========================================================================
@@ -196,5 +177,31 @@ mod tests {
         let tile_count =
             game.board().iter_tiles().filter(|t| t.is_some()).count();
         assert_eq!(tile_count, 2);
+    }
+
+    #[test]
+    fn test_spawn_on_move() {
+        let mut game = Game::new();
+        game.set_board([
+            [Some(2), None, None, None],
+            [None; 4],
+            [None; 4],
+            [None; 4],
+        ]);
+
+        // Move Left: No change (already at edge)
+        game.move_left();
+        let count_after_no_change =
+            game.board().iter_tiles().filter(|t| t.is_some()).count();
+        assert_eq!(
+            count_after_no_change, 1,
+            "Should not spawn if board didn't change"
+        );
+
+        // Move Right: Change (slides to right)
+        game.move_right();
+        let count_after_change =
+            game.board().iter_tiles().filter(|t| t.is_some()).count();
+        assert_eq!(count_after_change, 2, "Should spawn if board changed");
     }
 }

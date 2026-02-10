@@ -11,27 +11,11 @@ pub struct Board {
     tiles: [[Option<u32>; BOARD_SIZE]; BOARD_SIZE],
 }
 
-#[derive(Default)]
-pub struct MergeResult {
-    pub merged_tiles: Vec<u32>,
-    pub merged_sources: Vec<u32>,
-    pub merged_positions: Vec<(usize, usize)>,
+#[derive(Default, Clone, Copy, Debug)]
+pub struct MoveOutcome {
+    pub score_delta: u32,
     pub board_changed: bool,
-}
-
-impl MergeResult {
-    fn new(
-        merged_tiles: Vec<u32>,
-        merged_sources: Vec<u32>,
-        merged_positions: Vec<(usize, usize)>,
-    ) -> Self {
-        Self {
-            merged_tiles,
-            merged_sources,
-            merged_positions,
-            board_changed: false,
-        }
-    }
+    pub merged: [[bool; BOARD_SIZE]; BOARD_SIZE],
 }
 
 impl Board {
@@ -54,39 +38,124 @@ impl Board {
     // Game Actions
     // ========================================================================
 
-    pub fn move_up(&mut self) -> Vec<MergeResult> {
-        self.transpose();
-        let results = (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row, true, false))
-            .collect::<Vec<_>>();
-        self.transpose();
-        results
+    pub fn move_up(&mut self) -> MoveOutcome {
+        self.process_lines(true, false)
     }
 
-    pub fn move_down(&mut self) -> Vec<MergeResult> {
-        self.transpose();
-        self.reverse_rows();
-        let results = (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row, true, true))
-            .collect::<Vec<_>>();
-        self.reverse_rows();
-        self.transpose();
-        results
+    pub fn move_down(&mut self) -> MoveOutcome {
+        self.process_lines(true, true)
     }
 
-    pub fn move_left(&mut self) -> Vec<MergeResult> {
-        (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row, false, false))
-            .collect::<Vec<_>>()
+    pub fn move_left(&mut self) -> MoveOutcome {
+        self.process_lines(false, false)
     }
 
-    pub fn move_right(&mut self) -> Vec<MergeResult> {
-        self.reverse_rows();
-        let results = (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row, false, true))
-            .collect::<Vec<_>>();
-        self.reverse_rows();
-        results
+    pub fn move_right(&mut self) -> MoveOutcome {
+        self.process_lines(false, true)
+    }
+
+    fn process_lines(&mut self, is_col: bool, reverse: bool) -> MoveOutcome {
+        let mut outcome = MoveOutcome::default();
+
+        for i in 0..BOARD_SIZE {
+            // Extract line
+            let mut line = [None; BOARD_SIZE];
+
+            // Transpose in place
+            if is_col {
+                for (j, val) in line.iter_mut().enumerate() {
+                    *val = self.tiles[j][i];
+                }
+            } else {
+                line = self.tiles[i];
+            }
+
+            // Reverse for down and right movements
+            if reverse {
+                line.reverse();
+            }
+
+            // Process logic
+            let (new_line, score, merged_flags, changed) =
+                self.shift_and_merge(line);
+
+            if changed {
+                outcome.board_changed = true;
+                outcome.score_delta += score;
+
+                // Write back
+                let mut final_line = new_line;
+                let mut final_flags = merged_flags;
+
+                // Reverse again to restore
+                if reverse {
+                    final_line.reverse();
+                    final_flags.reverse();
+                }
+
+                if is_col {
+                    for j in 0..BOARD_SIZE {
+                        self.tiles[j][i] = final_line[j];
+                        outcome.merged[j][i] = final_flags[j];
+                    }
+                } else {
+                    self.tiles[i] = final_line;
+                    outcome.merged[i] = final_flags;
+                }
+            }
+        }
+
+        outcome
+    }
+
+    fn shift_and_merge(
+        &self,
+        line: [Option<u32>; BOARD_SIZE],
+    ) -> ([Option<u32>; BOARD_SIZE], u32, [bool; BOARD_SIZE], bool) {
+        let mut result = [None; BOARD_SIZE];
+        let mut merged = [false; BOARD_SIZE];
+        let mut score = 0;
+        let mut changed = false;
+
+        // Step 1: Collect non-empty tiles
+        let mut buffer = [0; BOARD_SIZE];
+        let mut count = 0;
+
+        for val in line.iter().flatten() {
+            buffer[count] = *val;
+            count += 1;
+        }
+
+        // Step 2: Merge
+        let mut final_buffer = [(0, false); BOARD_SIZE];
+        let mut final_count = 0;
+
+        let mut i = 0;
+        while i < count {
+            if i + 1 < count && buffer[i] == buffer[i + 1] {
+                let merged_val = buffer[i] * 2;
+                final_buffer[final_count] = (merged_val, true);
+                score += merged_val;
+                i += 2; // Skip next
+            } else {
+                final_buffer[final_count] = (buffer[i], false);
+                i += 1;
+            }
+            final_count += 1;
+        }
+
+        // Step 3: Write back to result array
+        for i in 0..final_count {
+            result[i] = Some(final_buffer[i].0);
+            merged[i] = final_buffer[i].1;
+        }
+
+        // Determine if changed
+        if line != result {
+            changed = true;
+        }
+
+        (result, score, merged, changed)
     }
 
     pub fn spawn_tile(&mut self) {
@@ -189,107 +258,6 @@ impl Board {
     }
 
     // ========================================================================
-    // Slide & Merge Logic
-    // ========================================================================
-
-    fn merge_cells(
-        row: usize,
-        values: &[u32],
-        transposed: bool,
-        reversed: bool,
-    ) -> MergeResult {
-        // Merge adjacent matching values into a new vector
-        let mut merged_tiles = Vec::new();
-        // Capture the merged values for scoring
-        let mut merged_values = Vec::new();
-        // Capture the coordinate pairs of merged tiles for reporting
-        let mut merged_positions = Vec::new();
-
-        let mut iter = values.iter().copied().enumerate().peekable();
-        while let Some((_, val)) = iter.next() {
-            if let Some((_, peek_val)) = iter.peek()
-                && val == *peek_val
-            {
-                merged_values.push(val);
-                merged_tiles.push(val * 2);
-                let dest_idx = merged_tiles.len() - 1;
-                if !transposed && !reversed {
-                    // Left
-                    merged_positions.push((row, dest_idx));
-                } else if !transposed && reversed {
-                    // Right
-                    merged_positions.push((row, BOARD_SIZE - 1 - dest_idx));
-                } else if transposed && !reversed {
-                    // Up
-                    merged_positions.push((dest_idx, row));
-                } else {
-                    // Down
-                    merged_positions.push((BOARD_SIZE - 1 - dest_idx, row));
-                }
-                // Skip the matched value
-                iter.next();
-            } else {
-                merged_tiles.push(val);
-            }
-        }
-        MergeResult::new(merged_tiles, merged_values, merged_positions)
-    }
-
-    fn transpose(&mut self) {
-        for i in 0..BOARD_SIZE {
-            for j in (i + 1)..BOARD_SIZE {
-                let temp = self.tiles[i][j];
-                self.tiles[i][j] = self.tiles[j][i];
-                self.tiles[j][i] = temp;
-            }
-        }
-    }
-
-    fn reverse_rows(&mut self) {
-        for row in self.tiles.iter_mut() {
-            row.reverse();
-        }
-    }
-
-    fn slide_row(
-        &mut self,
-        row: usize,
-        transposed: bool,
-        reversed: bool,
-    ) -> MergeResult {
-        // Extract the row data using the helper
-        let values: Vec<_> = self.extract_row(row).collect();
-
-        // Early exit if no values
-        if values.is_empty() {
-            return MergeResult::default();
-        }
-
-        // Capture the original state of the row
-        let original = self.tiles[row];
-
-        // Merge cells
-        let mut merged = Board::merge_cells(row, &values, transposed, reversed);
-
-        // Write back
-        for (col, &value) in merged.merged_tiles.iter().enumerate() {
-            self.tiles[row][col] = Some(value);
-        }
-
-        // Clear remaining
-        for col in merged.merged_tiles.len()..self.tiles.len() {
-            self.tiles[row][col] = None;
-        }
-
-        // Check if anything changed
-        merged.board_changed = self.tiles[row]
-            .iter()
-            .zip(original.iter())
-            .any(|(&current, &original)| current != original);
-        merged
-    }
-
-    // ========================================================================
     // Data Extraction Helpers
     // ========================================================================
 
@@ -301,10 +269,6 @@ impl Board {
                 .enumerate()
                 .map(move |(col_idx, &cell)| ((row_idx, col_idx), cell))
         })
-    }
-
-    fn extract_row(&self, row: usize) -> impl Iterator<Item = u32> {
-        self.tiles[row].iter().filter_map(|&val| val)
     }
 
     #[cfg(test)]
@@ -339,8 +303,7 @@ mod tests {
             [None, None, None, Some(2)],
         ]);
 
-        // Consume the iterator
-        for _ in board.move_left() {}
+        board.move_left();
 
         let tiles = board.get_tiles();
         assert_eq!(tiles[0][0], Some(2));
@@ -359,7 +322,7 @@ mod tests {
             [Some(2), Some(4), Some(8), Some(16)],
         ]);
 
-        for _ in board.move_left() {}
+        board.move_left();
 
         let tiles = board.get_tiles();
         // Row 0: 2 2 -> 4
@@ -382,7 +345,7 @@ mod tests {
             [Some(2), Some(2), Some(2), None],
         ]);
 
-        for _ in board.move_right() {}
+        board.move_right();
 
         let tiles = board.get_tiles();
         assert_eq!(tiles[0], [None, None, None, Some(4)]);
@@ -401,7 +364,7 @@ mod tests {
             [Some(4), None, Some(4), Some(16)],
         ]);
 
-        for _ in board.move_up() {}
+        board.move_up();
 
         let tiles = board.get_tiles();
         // Col 0: 2,2,4,4 -> 4,8
@@ -429,7 +392,7 @@ mod tests {
             [None; 4],
         ]);
 
-        for _ in board.move_left() {}
+        board.move_left();
 
         let tiles = board.get_tiles();
         assert_eq!(tiles[0], [Some(4), Some(2), None, None]);
@@ -446,7 +409,7 @@ mod tests {
             [None; 4],
         ]);
 
-        for _ in board.move_left() {}
+        board.move_left();
 
         let tiles = board.get_tiles();
         assert_eq!(tiles[0], [Some(4), None, None, None]);
@@ -463,9 +426,8 @@ mod tests {
             [Some(32), Some(64), Some(128), Some(256)],
         ]);
 
-        let results: Vec<_> = board.move_left();
-        // None of the rows should report a change
-        assert!(results.iter().all(|r| !r.board_changed));
+        let outcome = board.move_left();
+        assert!(!outcome.board_changed);
     }
 
     #[test]
@@ -505,7 +467,7 @@ mod tests {
             [Some(4), None, Some(2), Some(2)],
         ]);
 
-        for _ in board.move_down() {}
+        board.move_down();
 
         let tiles = board.get_tiles();
         // Col 0: 2,2,4,4 -> 4,8 (at bottom)
