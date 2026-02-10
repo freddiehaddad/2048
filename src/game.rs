@@ -1,6 +1,13 @@
-use crate::board::Board;
+use crate::board::{BOARD_SIZE, Board};
 
 pub const GAME_TITLE: &str = " 2048 ";
+
+#[derive(Default, Clone, Copy)]
+pub struct TurnResult {
+    // Merged cells for UI highlighting.
+    pub merged: [[bool; BOARD_SIZE]; BOARD_SIZE],
+    pub score_delta: u32,
+}
 
 #[derive(Default)]
 pub struct Game {
@@ -37,24 +44,24 @@ impl Game {
     // Game Actions
     // ========================================================================
 
-    pub fn move_up(&mut self) {
+    pub fn move_up(&mut self) -> TurnResult {
         let results = self.board.move_up();
-        self.process_move_results(results.into_iter());
+        self.process_move_results(&results)
     }
 
-    pub fn move_down(&mut self) {
+    pub fn move_down(&mut self) -> TurnResult {
         let results = self.board.move_down();
-        self.process_move_results(results.into_iter());
+        self.process_move_results(&results)
     }
 
-    pub fn move_left(&mut self) {
+    pub fn move_left(&mut self) -> TurnResult {
         let results = self.board.move_left();
-        self.process_move_results(results.into_iter());
+        self.process_move_results(&results)
     }
 
-    pub fn move_right(&mut self) {
+    pub fn move_right(&mut self) -> TurnResult {
         let results = self.board.move_right();
-        self.process_move_results(results.into_iter());
+        self.process_move_results(&results)
     }
 
     // ========================================================================
@@ -63,9 +70,10 @@ impl Game {
 
     fn process_move_results(
         &mut self,
-        results: impl Iterator<Item = crate::board::MergeResult>,
-    ) {
+        results: &[crate::board::MergeResult],
+    ) -> TurnResult {
         let mut board_changed = false;
+        let mut report = TurnResult::default();
 
         for result in results {
             if result.board_changed {
@@ -76,13 +84,21 @@ impl Game {
             // merged_sources contains the input values (e.g. two 2s merging puts one 2 here).
             // So we add value * 2.
             for &source_value in result.merged_sources.iter() {
-                self.score += source_value * 2;
+                let points = source_value * 2;
+                self.score += points;
+                report.score_delta += points;
+            }
+
+            for &(row, col) in &result.merged_positions {
+                report.merged[row][col] = true;
             }
         }
 
         if board_changed {
             self.board.spawn_tile();
         }
+
+        report
     }
 
     // ========================================================================

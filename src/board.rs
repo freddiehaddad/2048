@@ -15,14 +15,20 @@ pub struct Board {
 pub struct MergeResult {
     pub merged_tiles: Vec<u32>,
     pub merged_sources: Vec<u32>,
+    pub merged_positions: Vec<(usize, usize)>,
     pub board_changed: bool,
 }
 
 impl MergeResult {
-    fn new(merged_tiles: Vec<u32>, merged_values: Vec<u32>) -> Self {
+    fn new(
+        merged_tiles: Vec<u32>,
+        merged_sources: Vec<u32>,
+        merged_positions: Vec<(usize, usize)>,
+    ) -> Self {
         Self {
             merged_tiles,
-            merged_sources: merged_values,
+            merged_sources,
+            merged_positions,
             board_changed: false,
         }
     }
@@ -51,7 +57,7 @@ impl Board {
     pub fn move_up(&mut self) -> Vec<MergeResult> {
         self.transpose();
         let results = (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row))
+            .map(|row| self.slide_row(row, true, false))
             .collect::<Vec<_>>();
         self.transpose();
         results
@@ -61,7 +67,7 @@ impl Board {
         self.transpose();
         self.reverse_rows();
         let results = (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row))
+            .map(|row| self.slide_row(row, true, true))
             .collect::<Vec<_>>();
         self.reverse_rows();
         self.transpose();
@@ -70,14 +76,14 @@ impl Board {
 
     pub fn move_left(&mut self) -> Vec<MergeResult> {
         (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row))
+            .map(|row| self.slide_row(row, false, false))
             .collect::<Vec<_>>()
     }
 
     pub fn move_right(&mut self) -> Vec<MergeResult> {
         self.reverse_rows();
         let results = (0..BOARD_SIZE)
-            .map(|row| self.slide_row(row))
+            .map(|row| self.slide_row(row, false, true))
             .collect::<Vec<_>>();
         self.reverse_rows();
         results
@@ -186,24 +192,47 @@ impl Board {
     // Slide & Merge Logic
     // ========================================================================
 
-    fn merge_cells(values: &[u32]) -> MergeResult {
+    fn merge_cells(
+        row: usize,
+        values: &[u32],
+        transposed: bool,
+        reversed: bool,
+    ) -> MergeResult {
         // Merge adjacent matching values into a new vector
         let mut merged_tiles = Vec::new();
         // Capture the merged values for scoring
         let mut merged_values = Vec::new();
+        // Capture the coordinate pairs of merged tiles for reporting
+        let mut merged_positions = Vec::new();
 
-        let mut iter = values.iter().copied().peekable();
-        while let Some(val) = iter.next() {
-            if iter.peek() == Some(&val) {
+        let mut iter = values.iter().copied().enumerate().peekable();
+        while let Some((_, val)) = iter.next() {
+            if let Some((_, peek_val)) = iter.peek()
+                && val == *peek_val
+            {
                 merged_values.push(val);
                 merged_tiles.push(val * 2);
+                let dest_idx = merged_tiles.len() - 1;
+                if !transposed && !reversed {
+                    // Left
+                    merged_positions.push((row, dest_idx));
+                } else if !transposed && reversed {
+                    // Right
+                    merged_positions.push((row, BOARD_SIZE - 1 - dest_idx));
+                } else if transposed && !reversed {
+                    // Up
+                    merged_positions.push((dest_idx, row));
+                } else {
+                    // Down
+                    merged_positions.push((BOARD_SIZE - 1 - dest_idx, row));
+                }
                 // Skip the matched value
                 iter.next();
             } else {
                 merged_tiles.push(val);
             }
         }
-        MergeResult::new(merged_tiles, merged_values)
+        MergeResult::new(merged_tiles, merged_values, merged_positions)
     }
 
     fn transpose(&mut self) {
@@ -222,7 +251,12 @@ impl Board {
         }
     }
 
-    fn slide_row(&mut self, row: usize) -> MergeResult {
+    fn slide_row(
+        &mut self,
+        row: usize,
+        transposed: bool,
+        reversed: bool,
+    ) -> MergeResult {
         // Extract the row data using the helper
         let values: Vec<_> = self.extract_row(row).collect();
 
@@ -235,7 +269,7 @@ impl Board {
         let original = self.tiles[row];
 
         // Merge cells
-        let mut merged = Board::merge_cells(&values);
+        let mut merged = Board::merge_cells(row, &values, transposed, reversed);
 
         // Write back
         for (col, &value) in merged.merged_tiles.iter().enumerate() {

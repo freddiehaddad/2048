@@ -21,7 +21,11 @@ const SCORE_HEIGHT: u16 = 1;
 // UI Rendering
 // ============================================================================
 
-fn render(frame: &mut ratatui::Frame, game: &game::Game) {
+fn render(
+    frame: &mut ratatui::Frame,
+    game: &game::Game,
+    report: &game::TurnResult,
+) {
     use crate::board::BOARD_SIZE;
     use ratatui::layout::{Constraint, Layout};
 
@@ -53,11 +57,16 @@ fn render(frame: &mut ratatui::Frame, game: &game::Game) {
     ])
     .areas(game_area);
 
-    render_board(frame, board_area, game);
+    render_board(frame, board_area, game, report);
     render_score(frame, score_area, game);
 }
 
-fn render_board(frame: &mut ratatui::Frame, area: Rect, game: &game::Game) {
+fn render_board(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    game: &game::Game,
+    report: &game::TurnResult,
+) {
     use crate::board::BOARD_SIZE;
     use crate::game::GAME_TITLE;
     use ratatui::{
@@ -108,7 +117,15 @@ fn render_board(frame: &mut ratatui::Frame, area: Rect, game: &game::Game) {
         let row = i / BOARD_SIZE;
         let col = i % BOARD_SIZE;
 
-        let cell_block = Block::default().borders(Borders::ALL);
+        let mut cell_block = Block::default().borders(Borders::ALL);
+        let mut style = Color::DarkGray;
+
+        if !game_over && report.merged[row][col] {
+            // Highlight the merged tile
+            style = Color::Green;
+        }
+
+        cell_block = cell_block.style(style);
         frame.render_widget(&cell_block, cell_area);
 
         let cell_inner = cell_block.inner(cell_area);
@@ -197,31 +214,38 @@ async fn run(mut terminal: ratatui::DefaultTerminal) -> Result<()> {
     use event::GameEvent::*;
 
     let mut game = game::Game::new();
+    let mut last_report = game::TurnResult::default();
 
     let (input_tx, mut input_rx) = mpsc::unbounded_channel();
 
     tokio::task::spawn_blocking(move || handle_input_events(input_tx));
 
-    terminal.draw(|frame| render(frame, &game))?;
+    terminal.draw(|frame| render(frame, &game, &last_report))?;
     while let Some(e) = input_rx.recv().await {
         match !game.is_game_over() {
             true => match e {
                 Quit => break,
-                Restart => game.reset(),
-                MoveUp => game.move_up(),
-                MoveDown => game.move_down(),
-                MoveLeft => game.move_left(),
-                MoveRight => game.move_right(),
+                Restart => {
+                    game.reset();
+                    last_report = game::TurnResult::default();
+                }
+                MoveUp => last_report = game.move_up(),
+                MoveDown => last_report = game.move_down(),
+                MoveLeft => last_report = game.move_left(),
+                MoveRight => last_report = game.move_right(),
             },
 
             false => match e {
                 Quit => break,
-                Restart => game.reset(),
+                Restart => {
+                    game.reset();
+                    last_report = game::TurnResult::default();
+                }
                 _ => (),
             },
         }
 
-        terminal.draw(|frame| render(frame, &game))?;
+        terminal.draw(|frame| render(frame, &game, &last_report))?;
     }
 
     Ok(())
