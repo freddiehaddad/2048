@@ -2,7 +2,7 @@
 
 A terminal recreation of the 2048 game in Rust!
 
-https://github.com/user-attachments/assets/55e82b6b-eb40-4375-abdb-c0bfc978c681
+https://github.com/user-attachments/assets/483799e4-80bc-462f-9be7-8946324f6c94
 
 ## 🚀 Quick Start
 
