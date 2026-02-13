@@ -5,6 +5,10 @@ edition = "2024"
 license = "MIT"
 authors = [ "Freddie Haddad" ]
 
+[[bin]]
+name = "2048"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.100"
 crossterm = "0.29.0"

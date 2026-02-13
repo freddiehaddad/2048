@@ -29,10 +29,10 @@ cargo build --release
 cargo run --release
 
 # Directly after How to Build steps (Linux/Mac)
-./target/release/rust-2048
+./target/release/2048
 
 # Directly after How to Build steps (Windows)
-./target/release/rust-2048.exe
+./target/release/2048.exe
 ```
 
 ## 🎮 Controls
