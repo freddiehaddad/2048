@@ -182,26 +182,25 @@ fn handle_input_events(
     use event::GameEvent::*;
 
     loop {
-        if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
-            // Key press, release, and repeat are distinct events.
-            // We only care about key press events.
-            if !key.is_press() {
-                continue;
-            }
+        let event = crossterm::event::read()?;
 
-            match key.code {
-                Char('q') => {
-                    input_tx.send(Quit)?;
-                    break;
-                }
-                Char('r') => input_tx.send(Restart)?,
-                Up | Char('k') | Char('w') => input_tx.send(MoveUp)?,
-                Down | Char('j') | Char('s') => input_tx.send(MoveDown)?,
-                Left | Char('h') | Char('a') => input_tx.send(MoveLeft)?,
-                Right | Char('l') | Char('d') => input_tx.send(MoveRight)?,
-                _ => (),
-            };
-        }
+        let key = match event.as_key_press_event() {
+            Some(key_event) => key_event,
+            None => continue,
+        };
+
+        match key.code {
+            Char('q') => {
+                input_tx.send(Quit)?;
+                break;
+            }
+            Char('r') => input_tx.send(Restart)?,
+            Up | Char('k') | Char('w') => input_tx.send(MoveUp)?,
+            Down | Char('j') | Char('s') => input_tx.send(MoveDown)?,
+            Left | Char('h') | Char('a') => input_tx.send(MoveLeft)?,
+            Right | Char('l') | Char('d') => input_tx.send(MoveRight)?,
+            _ => (),
+        };
     }
     Ok(())
 }
