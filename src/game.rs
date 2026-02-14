@@ -1,5 +1,7 @@
 use crate::board::{BOARD_SIZE, Board};
 
+pub(crate) const TITLE: &str = " 2048 ";
+
 const STARTING_TILE_TWO: u32 = 2;
 const STARTING_TILE_FOUR: u32 = 4;
 const STARTING_TILE_TWO_PROBABILITY: f64 = 0.9;
