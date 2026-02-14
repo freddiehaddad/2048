@@ -12,11 +12,12 @@ use tokio::{
 };
 
 use crate::event::Event;
+use crate::game::{ActionOutcome, Game, GameAction};
 
 const BUFSIZE: usize = 1;
 
-fn render(event: Event) {
-    println!("EVENT: {event:?}");
+fn render(move_result: ActionOutcome) {
+    println!("RENDER: {move_result:#?}");
 }
 
 fn input_loop(tx: Sender<Event>) -> Result<()> {
@@ -61,26 +62,28 @@ fn input_loop(tx: Sender<Event>) -> Result<()> {
 }
 
 async fn run_event_loop(mut rx: Receiver<Event>) -> Result<()> {
+    let mut game = Game::new();
+    render(ActionOutcome::default());
+
     while let Some(e) = rx.recv().await {
-        match e {
-            Event::MoveUp => println!("EVENT: {:?}", Event::MoveUp),
-            Event::MoveDown => println!("EVENT: {:?}", Event::MoveDown),
-            Event::MoveLeft => println!("EVENT: {:?}", Event::MoveLeft),
-            Event::MoveRight => println!("EVENT: {:?}", Event::MoveRight),
-            Event::Restart => println!("EVENT: {:?}", Event::Restart),
+        let move_result = match e {
+            Event::MoveUp => game.apply_move(GameAction::Up),
+            Event::MoveDown => game.apply_move(GameAction::Down),
+            Event::MoveLeft => game.apply_move(GameAction::Left),
+            Event::MoveRight => game.apply_move(GameAction::Right),
+            Event::Restart => game.restart(),
             Event::Quit => {
                 println!("EVENT: {:?}", Event::Quit);
                 break;
             }
-        }
+        };
+
+        render(move_result);
     }
     Ok(())
 }
 
 async fn run(mut terminal: ratatui::DefaultTerminal) -> Result<()> {
-    println!("Welcome to 2048!");
-    let game = game::Game::new();
-
     let (tx, mut rx): (Sender<Event>, Receiver<Event>) = channel(BUFSIZE);
 
     let handle = spawn_blocking(move || input_loop(tx));
