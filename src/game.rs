@@ -43,12 +43,10 @@ impl Game {
     }
 
     pub fn apply_move(&mut self, direction: GameAction) -> ActionOutcome {
-        println!("MOVE: {direction:?}");
         ActionOutcome::default()
     }
 
     pub fn restart(&mut self) -> ActionOutcome {
-        println!("RESTART");
         ActionOutcome::default()
     }
 }

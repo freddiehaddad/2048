@@ -127,27 +127,19 @@ fn input_loop(tx: Sender<Event>) -> Result<()> {
 
         match key.code {
             KeyCode::Up | KeyCode::Char('w') | KeyCode::Char('k') => {
-                println!("SEND: {:?}", Event::MoveUp);
-                tx.blocking_send(Event::MoveUp)?;
+                tx.blocking_send(Event::MoveUp)?
             }
             KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('j') => {
-                println!("SEND: {:?}", Event::MoveDown);
-                tx.blocking_send(Event::MoveDown)?;
+                tx.blocking_send(Event::MoveDown)?
             }
             KeyCode::Left | KeyCode::Char('a') | KeyCode::Char('h') => {
-                println!("SEND: {:?}", Event::MoveLeft);
-                tx.blocking_send(Event::MoveLeft)?;
+                tx.blocking_send(Event::MoveLeft)?
             }
             KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('l') => {
-                println!("SEND: {:?}", Event::MoveRight);
-                tx.blocking_send(Event::MoveRight)?;
+                tx.blocking_send(Event::MoveRight)?
             }
-            KeyCode::Char('r') => {
-                println!("SEND: {:?}", Event::Restart);
-                tx.blocking_send(Event::Restart)?;
-            }
+            KeyCode::Char('r') => tx.blocking_send(Event::Restart)?,
             KeyCode::Char('q') => {
-                println!("SEND: {:?}", Event::Quit);
                 tx.blocking_send(Event::Quit)?;
                 break;
             }
@@ -157,7 +149,7 @@ fn input_loop(tx: Sender<Event>) -> Result<()> {
     Ok(())
 }
 
-async fn run_event_loop(
+async fn event_loop(
     mut rx: Receiver<Event>,
     mut terminal: DefaultTerminal,
 ) -> Result<()> {
@@ -165,36 +157,26 @@ async fn run_event_loop(
     terminal.draw(|frame| render(ActionOutcome::default(), frame))?;
 
     while let Some(e) = rx.recv().await {
-        let move_result = match e {
+        let outcome = match e {
             Event::MoveUp => game.apply_move(GameAction::Up),
             Event::MoveDown => game.apply_move(GameAction::Down),
             Event::MoveLeft => game.apply_move(GameAction::Left),
             Event::MoveRight => game.apply_move(GameAction::Right),
             Event::Restart => game.restart(),
-            Event::Quit => {
-                println!("EVENT: {:?}", Event::Quit);
-                break;
-            }
+            Event::Quit => break,
         };
 
-        terminal.draw(|frame| render(move_result, frame))?;
+        terminal.draw(|frame| render(outcome, frame))?;
     }
-    Ok(())
-}
-
-async fn run(terminal: DefaultTerminal) -> Result<()> {
-    let (tx, rx): (Sender<Event>, Receiver<Event>) = channel(BUFSIZE);
-
-    let handle = spawn_blocking(move || input_loop(tx));
-    run_event_loop(rx, terminal).await?;
-
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let terminal = ratatui::init();
-    run(terminal).await?;
+    let (tx, rx): (Sender<Event>, Receiver<Event>) = channel(BUFSIZE);
+    spawn_blocking(move || input_loop(tx));
+    event_loop(rx, terminal).await?;
     ratatui::restore();
     Ok(())
 }
