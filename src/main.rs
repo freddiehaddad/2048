@@ -8,13 +8,18 @@ use anyhow::Result;
 use ratatui::crossterm::event::{KeyCode, read};
 use ratatui::layout::{Margin, Rect};
 use ratatui::{DefaultTerminal, Frame};
+use ratatui::{
+    layout::{Constraint, Layout},
+    widgets::{Block, BorderType, Paragraph},
+};
 use tokio::{
     sync::mpsc::{Receiver, Sender, channel},
     task::spawn_blocking,
 };
 
+use crate::board::{BOARD_SIZE, Board};
 use crate::event::Event;
-use crate::game::{ActionOutcome, Game, GameAction};
+use crate::game::{ActionOutcome, CellResult, Game, GameAction, TITLE};
 
 const BUFSIZE: usize = 1;
 
@@ -24,42 +29,34 @@ const SCORE_HEIGHT: u16 = 1;
 const CELL_PADDING_X: u16 = 1;
 const BORDER_WIDTH: u16 = 1;
 
-fn render(move_result: ActionOutcome, frame: &mut Frame) {
-    use crate::board::{BOARD_SIZE, Board};
-    use crate::game::TITLE;
-    use Constraint::Length;
-    use ratatui::layout::{Constraint, Layout};
-    use ratatui::widgets::{Block, BorderType, Paragraph};
-
-    const MAIN_WIDTH: u16 = BOARD_SIZE as u16 * (CELL_WIDTH + CELL_PADDING_X)
+fn calculate_game_dimentions() -> (u16, u16) {
+    let width = BOARD_SIZE as u16 * (CELL_WIDTH + CELL_PADDING_X)
         + CELL_PADDING_X
         + (BORDER_WIDTH * 2);
-    const MAIN_HEIGHT: u16 =
+    let height =
         BOARD_SIZE as u16 * CELL_HEIGHT + SCORE_HEIGHT + (BORDER_WIDTH * 2);
+    (width, height)
+}
 
-    // Center the game area within the terminal frame
-    let game_rect = frame
-        .area()
-        .centered(Length(MAIN_WIDTH), Length(MAIN_HEIGHT));
-
-    // Split the game area into the tiles area and the score area
-    let game_layout =
-        Layout::vertical([Constraint::Fill(1), Length(SCORE_HEIGHT)]);
-    let [tiles_rect, scores_rect] = game_layout.areas(game_rect);
-
-    // Render the border and title around the tiles area
+// Render the border and title around the tiles area
+fn render_board(area: Rect, frame: &mut Frame) {
     frame.render_widget(
         Block::bordered()
             .border_type(BorderType::Thick)
             .title(TITLE),
-        tiles_rect,
+        area,
     );
+}
 
+fn render_tiles(
+    outcome: [[CellResult; BOARD_SIZE]; BOARD_SIZE],
+    area: Rect,
+    frame: &mut Frame,
+) {
     // Split the tiles area into rows
     let rows_layout = Layout::vertical([Constraint::Fill(1); BOARD_SIZE]);
     let rows_rects: [Rect; BOARD_SIZE] = rows_layout.areas(
-        tiles_rect
-            .inner(Margin::new(BORDER_WIDTH + CELL_PADDING_X, BORDER_WIDTH)),
+        area.inner(Margin::new(BORDER_WIDTH + CELL_PADDING_X, BORDER_WIDTH)),
     );
 
     // Each row is split into columns, with spacing between them
@@ -91,8 +88,32 @@ fn render(move_result: ActionOutcome, frame: &mut Frame) {
             frame.render_widget(Paragraph::new(text).centered(), cell);
         }
     }
+}
 
-    frame.render_widget(Paragraph::new("Score").right_aligned(), scores_rect);
+fn render_score(score: u32, area: Rect, frame: &mut Frame) {
+    let score_text = format!("Score: {:<6}", score);
+    frame.render_widget(Paragraph::new(score_text).right_aligned(), area);
+}
+
+fn render(outcome: ActionOutcome, frame: &mut Frame) {
+    let (main_width, main_height) = calculate_game_dimentions();
+
+    // Center the game area within the terminal frame
+    let game_area = frame.area().centered(
+        Constraint::Length(main_width),
+        Constraint::Length(main_height),
+    );
+
+    // Split the game area into the tiles area and the score area
+    let game_layout = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(SCORE_HEIGHT),
+    ]);
+    let [tiles_area, scores_area] = game_layout.areas(game_area);
+
+    render_board(tiles_area, frame);
+    render_tiles(outcome.board, tiles_area, frame);
+    render_score(outcome.score, scores_area, frame);
 }
 
 fn input_loop(tx: Sender<Event>) -> Result<()> {
