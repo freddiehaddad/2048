@@ -1,0 +1,15 @@
+[package]
+name = "rust-2048"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+authors = [ "Freddie Haddad" ]
+
+[[bin]]
+name = "2048"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.101"
+ratatui = "0.30.0"
+tokio = { version = "1.49.0", features = ["full"] }
