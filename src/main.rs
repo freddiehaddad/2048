@@ -7,7 +7,7 @@ mod game;
 use anyhow::Result;
 use ratatui::crossterm::event::{KeyCode, read};
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::{DefaultTerminal, Frame};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -18,7 +18,7 @@ use tokio::{
     task::spawn_blocking,
 };
 
-use crate::board::{BOARD_SIZE, Board};
+use crate::board::BOARD_SIZE;
 use crate::event::Event;
 use crate::game::{ActionOutcome, CellResult, Game, GameAction, TITLE};
 
