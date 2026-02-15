@@ -23,8 +23,15 @@ impl Board {
         self.cells.iter().filter_map(move |row| row[col])
     }
 
-    // Sets the value of the cell at the given coordinates.
-    pub fn set_cell(&mut self, row: usize, col: usize, value: Option<u32>) {
-        self.cells[row][col] = value;
+    pub fn row(&self, row: usize) -> impl DoubleEndedIterator<Item = u32> {
+        self.cells[row].iter().copied().flatten()
+    }
+
+    pub fn cell(&self, row: usize, col: usize) -> Option<u32> {
+        self.cells[row][col]
+    }
+
+    pub fn cell_mut(&mut self, row: usize, col: usize) -> &mut Option<u32> {
+        &mut self.cells[row][col]
     }
 }

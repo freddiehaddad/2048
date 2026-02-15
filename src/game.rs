@@ -26,17 +26,33 @@ pub struct CellResult {
 #[derive(Debug, Default)]
 pub struct ActionOutcome {
     pub score: u32,
+    pub changed: bool,
+    pub game_over: bool,
     pub board: [[CellResult; BOARD_SIZE]; BOARD_SIZE],
 }
 
-impl From<(u32, &Board)> for ActionOutcome {
-    fn from((score, board): (u32, &Board)) -> Self {
+impl ActionOutcome {
+    fn iter_cells(
+        &self,
+    ) -> impl Iterator<Item = ((usize, usize), &CellResult)> {
+        self.board.iter().enumerate().flat_map(|(row, row_cells)| {
+            row_cells
+                .iter()
+                .enumerate()
+                .map(move |(col, col_cell)| ((row, col), col_cell))
+        })
+    }
+}
+
+impl From<&Game> for ActionOutcome {
+    fn from(game: &Game) -> Self {
         let mut outcome = ActionOutcome {
-            score,
+            score: game.score,
+            game_over: game.game_over,
             ..Default::default()
         };
 
-        for ((row, col), cell) in board.iter_cells() {
+        for ((row, col), cell) in game.board.iter_cells() {
             outcome.board[row][col].value = *cell;
         }
 
@@ -46,50 +62,72 @@ impl From<(u32, &Board)> for ActionOutcome {
 
 #[derive(Debug, Default)]
 pub struct Game {
-    score: u32,
     board: Board,
+    score: u32,
+    game_over: bool,
 }
 
 impl Game {
     pub fn new() -> Self {
         Self {
-            score: 0,
             board: Game::initialize_board(),
+            ..Default::default()
         }
+    }
+
+    pub fn outcome(&self) -> ActionOutcome {
+        ActionOutcome::from(self)
     }
 
     pub fn restart(&mut self) -> ActionOutcome {
         self.score = 0;
+        self.game_over = false;
         self.board = Game::initialize_board();
 
-        ActionOutcome::from((self.score, &self.board))
+        self.outcome()
     }
 
-    pub fn score(&self) -> u32 {
-        self.score
+    pub fn is_game_over(&self) -> bool {
+        self.game_over
     }
 
     pub fn apply_move(&mut self, direction: GameAction) -> ActionOutcome {
-        match direction {
-            GameAction::Up => self.slide_and_merge(direction),
-            GameAction::Down => self.slide_and_merge(direction),
-            GameAction::Left => self.slide_and_merge(direction),
-            GameAction::Right => self.slide_and_merge(direction),
+        if self.is_game_over() {
+            return self.outcome();
         }
+
+        let mut outcome = ActionOutcome::default();
+        self.slide_and_merge(direction, &mut outcome);
+        self.update_board(&mut outcome);
+
+        self.update_score(&mut outcome);
+
+        self.check_game_over(&mut outcome);
+
+        if outcome.changed && !self.is_game_over() {
+            self.spawn_random_tile(&mut outcome);
+            self.update_board(&mut outcome);
+        }
+
+        outcome
     }
 
-    // Helper function that slides and merges the tiles in a single column
-    // according to the game rules, updating the board and score as necessary.
-    fn slide_and_merge_column(
+    fn update_score(&mut self, outcome: &mut ActionOutcome) {
+        self.score += outcome.score;
+        outcome.score = self.score;
+    }
+
+    // Helper function that slides and merges a single line of tiles in the given
+    // direction, updating the board and score as necessary.
+    fn slide_and_merge_line(
         &self,
         tiles: impl Iterator<Item = u32>,
-        rows: impl Iterator<Item = usize>,
-        col: usize,
+        positions: impl Iterator<Item = (usize, usize)>,
         board: &mut [[CellResult; BOARD_SIZE]; BOARD_SIZE],
         score: &mut u32,
     ) {
         let mut tiles = tiles.peekable();
-        for row in rows {
+        for (row, col) in positions {
             let Some(tile) = tiles.next() else {
                 break;
             };
@@ -115,51 +153,92 @@ impl Game {
 
     // Slides and merges the tiles in the given direction according to the game
     // rules, updating the board and score as necessary.
-    fn slide_and_merge(&mut self, direction: GameAction) -> ActionOutcome {
-        let mut board: [[CellResult; BOARD_SIZE]; BOARD_SIZE] =
-            [[CellResult::default(); BOARD_SIZE]; BOARD_SIZE];
-        let mut score = 0;
-
+    fn slide_and_merge(
+        &self,
+        direction: GameAction,
+        outcome: &mut ActionOutcome,
+    ) {
         match direction {
             GameAction::Up => {
                 for col in 0..BOARD_SIZE {
-                    self.slide_and_merge_column(
+                    self.slide_and_merge_line(
                         self.board.col(col),
-                        0..BOARD_SIZE,
-                        col,
-                        &mut board,
-                        &mut score,
+                        (0..BOARD_SIZE).map(|row| (row, col)),
+                        &mut outcome.board,
+                        &mut outcome.score,
                     );
                 }
             }
             GameAction::Down => {
                 for col in 0..BOARD_SIZE {
-                    self.slide_and_merge_column(
+                    self.slide_and_merge_line(
                         self.board.col(col).rev(),
-                        (0..BOARD_SIZE).rev(),
-                        col,
-                        &mut board,
-                        &mut score,
+                        (0..BOARD_SIZE).map(|row| (row, col)).rev(),
+                        &mut outcome.board,
+                        &mut outcome.score,
                     );
                 }
             }
-            GameAction::Left => unimplemented!(),
-            GameAction::Right => unimplemented!(),
+            GameAction::Left => {
+                for row in 0..BOARD_SIZE {
+                    self.slide_and_merge_line(
+                        self.board.row(row),
+                        (0..BOARD_SIZE).map(|col| (row, col)),
+                        &mut outcome.board,
+                        &mut outcome.score,
+                    );
+                }
+            }
+            GameAction::Right => {
+                for row in 0..BOARD_SIZE {
+                    self.slide_and_merge_line(
+                        self.board.row(row).rev(),
+                        (0..BOARD_SIZE).map(|col| (row, col)).rev(),
+                        &mut outcome.board,
+                        &mut outcome.score,
+                    );
+                }
+            }
+        }
+    }
+
+    fn check_game_over(&mut self, outcome: &mut ActionOutcome) {
+        for row in 0..BOARD_SIZE {
+            for col in 0..BOARD_SIZE {
+                // If there is an empty cell, the game is not over.
+                let Some(current_tile) = self.board.cell(row, col) else {
+                    return;
+                };
+
+                // If there is a mergeable tile to the right.
+                if col + 1 < BOARD_SIZE
+                    && self.board.cell(row, col + 1) == Some(current_tile)
+                {
+                    return;
+                }
+
+                // If there is a mergeable tile below, the game is not over.
+                if row + 1 < BOARD_SIZE
+                    && self.board.cell(row + 1, col) == Some(current_tile)
+                {
+                    return;
+                }
+            }
         }
 
-        // Update the game board with the new tile positions and values.
-        for ((row, col), cell) in
-            board.iter().enumerate().flat_map(|(row, row_cells)| {
-                row_cells
-                    .iter()
-                    .enumerate()
-                    .map(move |(col, col_cell)| ((row, col), col_cell))
-            })
-        {
-            self.board.set_cell(row, col, cell.value);
-        }
+        outcome.game_over = true;
+        self.game_over |= outcome.game_over;
+    }
 
-        ActionOutcome { score, board }
+    fn update_board(&mut self, outcome: &mut ActionOutcome) {
+        let mut changed = false;
+        for ((row, col), cell) in outcome.iter_cells() {
+            if cell.value != self.board.cell(row, col) {
+                *self.board.cell_mut(row, col) = cell.value;
+                changed = true;
+            }
+        }
+        outcome.changed |= changed;
     }
 
     // Spawns a new tile with the appropriate probability distribution.
@@ -169,6 +248,25 @@ impl Game {
             STARTING_TILE_TWO
         } else {
             STARTING_TILE_FOUR
+        }
+    }
+
+    fn spawn_random_tile(&self, outcome: &mut ActionOutcome) {
+        let mut cells: [Option<(usize, usize)>; 1] = [None; 1];
+
+        // Pick random coordinates on the board to place the starting tiles.
+        outcome
+            .iter_cells()
+            .filter(|(_, cell)| cell.value.is_none())
+            .map(|(pos, _)| Some(pos))
+            .sample_fill(&mut rand::rng(), &mut cells);
+
+        // Place the starting tiles on the board.
+        for (row, col) in cells.into_iter().flatten() {
+            outcome.board[row][col] = CellResult {
+                value: Some(Game::spawn_tile()),
+                ..Default::default()
+            };
         }
     }
 
@@ -189,7 +287,7 @@ impl Game {
 
         // Place the starting tiles on the board.
         for (row, col) in cells.into_iter().flatten() {
-            board.set_cell(row, col, Some(Game::spawn_tile()));
+            *board.cell_mut(row, col) = Some(Game::spawn_tile());
         }
 
         board

@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 mod board;
 mod event;
 mod game;
@@ -31,7 +29,7 @@ const CELL_PADDING_X: u16 = 1;
 const CELL_PADDING_Y: u16 = 2;
 const BORDER_WIDTH: u16 = 1;
 
-fn calculate_game_dimentions() -> (u16, u16) {
+fn calculate_game_dimensions() -> (u16, u16) {
     let width = BOARD_SIZE as u16 * (CELL_WIDTH + CELL_PADDING_X)
         + CELL_PADDING_X
         + (BORDER_WIDTH * 2);
@@ -51,7 +49,7 @@ fn render_board(area: Rect, frame: &mut Frame) {
 }
 
 fn render_tiles(
-    outcome: [[CellResult; BOARD_SIZE]; BOARD_SIZE],
+    outcome: &[[CellResult; BOARD_SIZE]; BOARD_SIZE],
     area: Rect,
     frame: &mut Frame,
 ) {
@@ -114,8 +112,8 @@ fn render_score(score: u32, area: Rect, frame: &mut Frame) {
     frame.render_widget(Paragraph::new(score_text).right_aligned(), area);
 }
 
-fn render(outcome: ActionOutcome, frame: &mut Frame) {
-    let (main_width, main_height) = calculate_game_dimentions();
+fn render(outcome: &ActionOutcome, frame: &mut Frame) {
+    let (main_width, main_height) = calculate_game_dimensions();
 
     // Center the game area within the terminal frame
     let game_area = frame.area().centered(
@@ -131,7 +129,7 @@ fn render(outcome: ActionOutcome, frame: &mut Frame) {
     let [tiles_area, scores_area] = game_layout.areas(game_area);
 
     render_board(tiles_area, frame);
-    render_tiles(outcome.board, tiles_area, frame);
+    render_tiles(&outcome.board, tiles_area, frame);
     render_score(outcome.score, scores_area, frame);
 }
 
@@ -174,7 +172,7 @@ async fn event_loop(
 ) -> Result<()> {
     let mut game = Game::new();
 
-    terminal.draw(|frame| render(game.restart(), frame))?;
+    terminal.draw(|frame| render(&game.outcome(), frame))?;
 
     while let Some(e) = rx.recv().await {
         let outcome = match e {
@@ -186,7 +184,7 @@ async fn event_loop(
             Event::Quit => break,
         };
 
-        terminal.draw(|frame| render(outcome, frame))?;
+        terminal.draw(|frame| render(&outcome, frame))?;
     }
     Ok(())
 }
