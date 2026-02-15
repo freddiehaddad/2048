@@ -6,8 +6,21 @@ pub struct Board {
 }
 
 impl Board {
-    // Returns an iterator over the board cells in row major order
-    pub fn iter_cells(&self) -> impl Iterator<Item = &Option<u32>> {
-        self.cells.iter().flat_map(|v| v.iter())
+    // Returns an iterator over the board cells and coordinates in row major
+    // order in the form ((row, col), value).
+    pub fn iter_cells(
+        &self,
+    ) -> impl Iterator<Item = ((usize, usize), &Option<u32>)> {
+        self.cells.iter().enumerate().flat_map(|(row, row_cells)| {
+            row_cells
+                .iter()
+                .enumerate()
+                .map(move |(col, col_cell)| ((row, col), col_cell))
+        })
+    }
+
+    // Sets the value of the cell at the given coordinates.
+    pub fn set_cell(&mut self, row: usize, col: usize, value: u32) {
+        self.cells[row][col] = Some(value);
     }
 }

@@ -7,6 +7,7 @@ mod game;
 use anyhow::Result;
 use ratatui::crossterm::event::{KeyCode, read};
 use ratatui::layout::{Margin, Rect};
+use ratatui::style::{Color, Style};
 use ratatui::{DefaultTerminal, Frame};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -27,6 +28,7 @@ const CELL_WIDTH: u16 = 11;
 const CELL_HEIGHT: u16 = 5;
 const SCORE_HEIGHT: u16 = 1;
 const CELL_PADDING_X: u16 = 1;
+const CELL_PADDING_Y: u16 = 2;
 const BORDER_WIDTH: u16 = 1;
 
 fn calculate_game_dimentions() -> (u16, u16) {
@@ -72,6 +74,7 @@ fn render_tiles(
     for (row, row_rect) in rows_rects.into_iter().enumerate() {
         let col_rects: [Rect; BOARD_SIZE * 2 - 1] = cols_layout.areas(row_rect);
 
+        // Filter out the spacing rectangles and render the tile rectangles
         for (col, col_rect) in
             col_rects.into_iter().enumerate().filter_map(|(idx, rect)| {
                 // Include the tile rectangles (skip the spacing)
@@ -82,16 +85,32 @@ fn render_tiles(
                 }
             })
         {
-            frame.render_widget(Block::bordered(), col_rect);
-            let cell = col_rect.inner(Margin::new(2, 2));
-            let text = format!("({},{})", row, col);
-            frame.render_widget(Paragraph::new(text).centered(), cell);
+            // Get the cell result for the current coordinates
+            let result = &outcome[row][col];
+
+            // Determine the style based on whether the cell was merged in the last move
+            let style = if result.merged {
+                Style::new().green()
+            } else {
+                Style::new().dim()
+            };
+
+            // Render the cell border with the appropriate style
+            frame
+                .render_widget(Block::bordered().border_style(style), col_rect);
+
+            // Render the cell value centered within the cell rectangle
+            let cell = col_rect.inner(Margin::new(0, CELL_PADDING_Y));
+            let cell_value =
+                result.value.map_or("".to_string(), |v| v.to_string());
+            frame.render_widget(Paragraph::new(cell_value).centered(), cell);
         }
     }
 }
 
 fn render_score(score: u32, area: Rect, frame: &mut Frame) {
-    let score_text = format!("Score: {:<6}", score);
+    const MIN_SCORE_WIDTH: usize = 6;
+    let score_text = format!("Score: {0:>1$} ", score, MIN_SCORE_WIDTH);
     frame.render_widget(Paragraph::new(score_text).right_aligned(), area);
 }
 
@@ -154,7 +173,8 @@ async fn event_loop(
     mut terminal: DefaultTerminal,
 ) -> Result<()> {
     let mut game = Game::new();
-    terminal.draw(|frame| render(ActionOutcome::default(), frame))?;
+
+    terminal.draw(|frame| render(game.restart(), frame))?;
 
     while let Some(e) = rx.recv().await {
         let outcome = match e {
