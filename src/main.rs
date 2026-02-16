@@ -182,8 +182,6 @@ async fn event_loop(
     terminal.draw(|frame| render(&game.outcome(), frame))?;
 
     while let Some(e) = rx.recv().await {
-        let force_redraw = matches!(e, Event::Restart);
-
         let outcome = match e {
             Event::Quit => break,
             Event::Restart => game.restart(),
@@ -201,7 +199,7 @@ async fn event_loop(
             Event::MoveRight => game.apply_move(GameAction::Right)?,
         };
 
-        if force_redraw || outcome.changed || outcome.game_over {
+        if outcome.changed || outcome.game_over {
             terminal.draw(|frame| render(&outcome, frame))?;
         }
     }

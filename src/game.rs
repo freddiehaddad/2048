@@ -85,7 +85,11 @@ impl Game {
         self.game_over = false;
         self.board = Game::initialize_board();
 
-        self.outcome()
+        // When restarting, we want to treat the new board as changed so that
+        // the UI can update to show the new starting tiles.
+        let mut outcome = self.outcome();
+        outcome.changed = true;
+        outcome
     }
 
     pub fn is_game_over(&self) -> bool {
