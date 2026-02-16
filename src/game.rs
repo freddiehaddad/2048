@@ -298,3 +298,442 @@ impl Game {
         board
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn board_from_rows(rows: [[Option<u32>; BOARD_SIZE]; BOARD_SIZE]) -> Board {
+        let mut board = Board::default();
+        for (row, row_cells) in rows.iter().enumerate() {
+            for (col, value) in row_cells.iter().enumerate() {
+                *board.cell_mut(row, col) = *value;
+            }
+        }
+        board
+    }
+
+    fn game_from_rows(
+        rows: [[Option<u32>; BOARD_SIZE]; BOARD_SIZE],
+        score: u32,
+        game_over: bool,
+    ) -> Game {
+        Game {
+            board: board_from_rows(rows),
+            score,
+            game_over,
+        }
+    }
+
+    fn outcome_values(
+        outcome: &ActionOutcome,
+    ) -> [[Option<u32>; BOARD_SIZE]; BOARD_SIZE] {
+        let mut values = [[None; BOARD_SIZE]; BOARD_SIZE];
+        for (row, row_values) in values.iter_mut().enumerate() {
+            for (col, value) in row_values.iter_mut().enumerate() {
+                *value = outcome.board[row][col].value;
+            }
+        }
+        values
+    }
+
+    fn count_filled(values: &[[Option<u32>; BOARD_SIZE]; BOARD_SIZE]) -> usize {
+        values
+            .iter()
+            .flat_map(|row| row.iter())
+            .filter(|cell| cell.is_some())
+            .count()
+    }
+
+    #[test]
+    fn slide_and_merge_line_merges_each_pair_once() {
+        let game = Game::default();
+        let mut board = [[CellResult::default(); BOARD_SIZE]; BOARD_SIZE];
+        let mut score = 0;
+
+        game.slide_and_merge_line(
+            vec![2, 2, 2, 2].into_iter(),
+            (0..BOARD_SIZE).map(|col| (0, col)),
+            &mut board,
+            &mut score,
+        );
+
+        assert_eq!(score, 8);
+        assert_eq!(board[0][0].value, Some(4));
+        assert!(board[0][0].merged);
+        assert_eq!(board[0][1].value, Some(4));
+        assert!(board[0][1].merged);
+        assert_eq!(board[0][2].value, None);
+        assert_eq!(board[0][3].value, None);
+    }
+
+    #[test]
+    fn slide_and_merge_up_merges_columns_correctly() {
+        let game = game_from_rows(
+            [
+                [Some(2), None, None, None],
+                [Some(2), None, None, None],
+                [Some(4), None, None, None],
+                [Some(4), None, None, None],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.slide_and_merge(GameAction::Up, &mut outcome);
+
+        assert_eq!(
+            outcome_values(&outcome),
+            [
+                [Some(4), None, None, None],
+                [Some(8), None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ]
+        );
+        assert_eq!(outcome.score, 12);
+        assert!(outcome.board[0][0].merged);
+        assert!(outcome.board[1][0].merged);
+    }
+
+    #[test]
+    fn slide_and_merge_down_merges_columns_correctly() {
+        let game = game_from_rows(
+            [
+                [Some(2), None, None, None],
+                [Some(2), None, None, None],
+                [Some(4), None, None, None],
+                [Some(4), None, None, None],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.slide_and_merge(GameAction::Down, &mut outcome);
+
+        assert_eq!(
+            outcome_values(&outcome),
+            [
+                [None, None, None, None],
+                [None, None, None, None],
+                [Some(4), None, None, None],
+                [Some(8), None, None, None],
+            ]
+        );
+        assert_eq!(outcome.score, 12);
+        assert!(outcome.board[2][0].merged);
+        assert!(outcome.board[3][0].merged);
+    }
+
+    #[test]
+    fn slide_and_merge_right_compacts_toward_right_edge() {
+        let game = game_from_rows(
+            [
+                [Some(2), None, Some(2), Some(2)],
+                [None, None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.slide_and_merge(GameAction::Right, &mut outcome);
+
+        assert_eq!(
+            outcome_values(&outcome),
+            [
+                [None, None, Some(2), Some(4)],
+                [None, None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ]
+        );
+        assert_eq!(outcome.score, 4);
+        assert!(outcome.board[0][3].merged);
+    }
+
+    #[test]
+    fn update_board_sets_changed_only_when_board_differs() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = game.outcome();
+
+        game.update_board(&mut outcome);
+        assert!(!outcome.changed);
+
+        outcome.board[0][0].value = Some(8);
+        game.update_board(&mut outcome);
+
+        assert!(outcome.changed);
+        assert_eq!(game.board.cell(0, 0), Some(8));
+    }
+
+    #[test]
+    fn check_game_over_is_false_when_empty_cells_exist() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), None, Some(4), Some(8)],
+                [Some(16), Some(32), Some(64), Some(128)],
+                [Some(256), Some(512), Some(1024), Some(2048)],
+                [Some(4096), Some(8192), Some(16384), Some(32768)],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.check_game_over(&mut outcome);
+
+        assert!(!outcome.game_over);
+        assert!(!game.is_game_over());
+    }
+
+    #[test]
+    fn check_game_over_detects_merge_on_last_row() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), Some(4), Some(8), Some(16)],
+                [Some(32), Some(64), Some(128), Some(256)],
+                [Some(512), Some(1024), Some(2048), Some(4096)],
+                [Some(3), Some(6), Some(12), Some(12)],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.check_game_over(&mut outcome);
+
+        assert!(!outcome.game_over);
+        assert!(!game.is_game_over());
+    }
+
+    #[test]
+    fn check_game_over_detects_merge_on_last_column() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), Some(4), Some(8), Some(16)],
+                [Some(32), Some(64), Some(128), Some(16)],
+                [Some(1024), Some(2048), Some(4096), Some(512)],
+                [Some(8192), Some(16384), Some(32768), Some(65536)],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.check_game_over(&mut outcome);
+
+        assert!(!outcome.game_over);
+        assert!(!game.is_game_over());
+    }
+
+    #[test]
+    fn check_game_over_sets_true_when_full_without_merges() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), Some(4), Some(8), Some(16)],
+                [Some(32), Some(64), Some(128), Some(256)],
+                [Some(512), Some(1024), Some(2048), Some(4096)],
+                [Some(3), Some(6), Some(12), Some(24)],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = ActionOutcome::default();
+
+        game.check_game_over(&mut outcome);
+
+        assert!(outcome.game_over);
+        assert!(game.is_game_over());
+    }
+
+    #[test]
+    fn spawn_random_tile_places_value_in_only_empty_slot() {
+        let game = Game::default();
+        let mut outcome = ActionOutcome::default();
+        let mut values = [
+            [Some(8), Some(16), Some(32), Some(64)],
+            [Some(128), Some(256), None, Some(512)],
+            [Some(1024), Some(2048), Some(4096), Some(8192)],
+            [Some(3), Some(6), Some(12), Some(24)],
+        ];
+
+        for (row, row_values) in values.iter().enumerate() {
+            for (col, value) in row_values.iter().enumerate() {
+                outcome.board[row][col].value = *value;
+            }
+        }
+
+        game.spawn_random_tile(&mut outcome).unwrap();
+        values[1][2] = outcome.board[1][2].value;
+
+        assert!(matches!(values[1][2], Some(2 | 4)));
+        assert!(!outcome.board[1][2].merged);
+    }
+
+    #[test]
+    fn spawn_random_tile_returns_error_when_no_empty_cells() {
+        let game = Game::default();
+        let mut outcome = ActionOutcome::default();
+        let values = [
+            [Some(2), Some(4), Some(8), Some(16)],
+            [Some(32), Some(64), Some(128), Some(256)],
+            [Some(512), Some(1024), Some(2048), Some(4096)],
+            [Some(3), Some(6), Some(12), Some(24)],
+        ];
+
+        for (row, row_values) in values.iter().enumerate() {
+            for (col, value) in row_values.iter().enumerate() {
+                outcome.board[row][col].value = *value;
+            }
+        }
+
+        assert!(game.spawn_random_tile(&mut outcome).is_err());
+    }
+
+    #[test]
+    fn apply_move_returns_snapshot_when_game_is_already_over() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), Some(4), Some(8), Some(16)],
+                [Some(32), Some(64), Some(128), Some(256)],
+                [Some(512), Some(1024), Some(2048), Some(4096)],
+                [Some(3), Some(6), Some(12), Some(24)],
+            ],
+            77,
+            true,
+        );
+        let before = game.outcome();
+
+        let outcome = game.apply_move(GameAction::Left).unwrap();
+
+        assert_eq!(outcome.score, before.score);
+        assert_eq!(outcome.game_over, before.game_over);
+        assert_eq!(outcome_values(&outcome), outcome_values(&before));
+        assert!(!outcome.changed);
+    }
+
+    #[test]
+    fn apply_move_without_board_change_does_not_spawn_tile() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ],
+            10,
+            false,
+        );
+
+        let outcome = game.apply_move(GameAction::Left).unwrap();
+        let values = outcome_values(&outcome);
+
+        assert!(!outcome.changed);
+        assert_eq!(outcome.score, 10);
+        assert_eq!(values[0][0], Some(2));
+        assert_eq!(count_filled(&values), 1);
+        assert_eq!(game.score, 10);
+    }
+
+    #[test]
+    fn apply_move_merge_updates_score_and_spawns_single_tile() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), Some(2), None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ],
+            0,
+            false,
+        );
+
+        let outcome = game.apply_move(GameAction::Left).unwrap();
+        let values = outcome_values(&outcome);
+        let spawned_tiles: Vec<u32> = values
+            .iter()
+            .enumerate()
+            .flat_map(|(row, cols)| {
+                cols.iter()
+                    .enumerate()
+                    .filter_map(move |(col, value)| match (row, col, value) {
+                        (0, 0, Some(4)) => None,
+                        (_, _, Some(v)) => Some(*v),
+                        _ => None,
+                    })
+            })
+            .collect();
+
+        assert!(outcome.changed);
+        assert_eq!(outcome.score, 4);
+        assert_eq!(values[0][0], Some(4));
+        assert_eq!(count_filled(&values), 2);
+        assert_eq!(spawned_tiles.len(), 1);
+        assert!(matches!(spawned_tiles[0], 2 | 4));
+        assert_eq!(game.score, 4);
+    }
+
+    #[test]
+    fn apply_move_can_set_game_over_after_spawn_fills_last_empty_cell() {
+        let mut game = game_from_rows(
+            [
+                [None, Some(8), Some(16), Some(32)],
+                [Some(64), Some(128), Some(256), Some(512)],
+                [Some(1024), Some(2048), Some(4096), Some(8192)],
+                [Some(16384), Some(32768), Some(65536), Some(131072)],
+            ],
+            0,
+            false,
+        );
+
+        let outcome = game.apply_move(GameAction::Left).unwrap();
+        let values = outcome_values(&outcome);
+
+        assert!(outcome.changed);
+        assert!(outcome.game_over);
+        assert!(game.is_game_over());
+        assert_eq!(count_filled(&values), BOARD_SIZE * BOARD_SIZE);
+    }
+
+    #[test]
+    fn restart_resets_state_and_creates_starting_tiles() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), Some(4), Some(8), Some(16)],
+                [Some(32), Some(64), Some(128), Some(256)],
+                [Some(512), Some(1024), Some(2048), Some(4096)],
+                [Some(3), Some(6), Some(12), Some(24)],
+            ],
+            999,
+            true,
+        );
+
+        let outcome = game.restart();
+        let values = outcome_values(&outcome);
+        let tiles: Vec<u32> = values
+            .iter()
+            .flat_map(|row| row.iter().filter_map(|cell| *cell))
+            .collect();
+
+        assert_eq!(outcome.score, 0);
+        assert!(!outcome.game_over);
+        assert!(!game.is_game_over());
+        assert_eq!(game.score, 0);
+        assert_eq!(tiles.len(), STARTING_TILE_COUNT);
+        assert!(tiles.iter().all(|value| matches!(value, 2 | 4)));
+    }
+}
