@@ -1,3 +1,4 @@
+use anyhow::{Result, bail};
 use rand::prelude::*;
 
 use crate::board::{BOARD_SIZE, Board};
@@ -91,9 +92,12 @@ impl Game {
         self.game_over
     }
 
-    pub fn apply_move(&mut self, direction: GameAction) -> ActionOutcome {
+    pub fn apply_move(
+        &mut self,
+        direction: GameAction,
+    ) -> Result<ActionOutcome> {
         if self.is_game_over() {
-            return self.outcome();
+            return Ok(self.outcome());
         }
 
         let mut outcome = ActionOutcome::default();
@@ -102,14 +106,14 @@ impl Game {
 
         self.update_score(&mut outcome);
 
-        if outcome.changed && !self.is_game_over() {
-            self.spawn_random_tile(&mut outcome);
+        if outcome.changed {
+            self.spawn_random_tile(&mut outcome)?;
             self.update_board(&mut outcome);
         }
 
         self.check_game_over(&mut outcome);
 
-        outcome
+        Ok(outcome)
     }
 
     fn update_score(&mut self, outcome: &mut ActionOutcome) {
@@ -251,20 +255,24 @@ impl Game {
         }
     }
 
-    fn spawn_random_tile(&self, outcome: &mut ActionOutcome) {
+    fn spawn_random_tile(&self, outcome: &mut ActionOutcome) -> Result<()> {
         // Pick random coordinates on the board to place the starting tiles.
-        let (row, col) = outcome
+        let Some((row, col)) = outcome
             .iter_cells()
             .filter(|(_, cell)| cell.value.is_none())
             .map(|(pos, _)| pos)
             .choose(&mut rand::rng())
-            .expect("Unable to spawn a random tile!");
+        else {
+            bail!("No empty cell available to spawn a random tile");
+        };
 
         // Place the starting tiles on the board.
         outcome.board[row][col] = CellResult {
             value: Some(Game::spawn_tile()),
             ..Default::default()
         };
+
+        Ok(())
     }
 
     // Initializes the board with the starting tiles in random positions.

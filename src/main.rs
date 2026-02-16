@@ -135,7 +135,7 @@ fn render(outcome: &ActionOutcome, frame: &mut Frame) {
     ]);
     let [tiles_area, scores_area] = game_layout.areas(game_area);
 
-    render_board(&outcome, tiles_area, frame);
+    render_board(outcome, tiles_area, frame);
     render_tiles(&outcome.board, tiles_area, frame);
     render_score(outcome.score, scores_area, frame);
 }
@@ -181,25 +181,26 @@ async fn event_loop(
     terminal.draw(|frame| render(&game.outcome(), frame))?;
 
     while let Some(e) = rx.recv().await {
-        if e == Event::Quit {
-            break;
-        }
-
-        if e == Event::Restart {
-            let outcome = game.restart();
-            terminal.draw(|frame| render(&outcome, frame))?;
-            continue;
-        }
+        let force_redraw = matches!(e, Event::Restart);
 
         let outcome = match e {
-            Event::MoveUp => game.apply_move(GameAction::Up),
-            Event::MoveDown => game.apply_move(GameAction::Down),
-            Event::MoveLeft => game.apply_move(GameAction::Left),
-            Event::MoveRight => game.apply_move(GameAction::Right),
-            _ => panic!("Should never happen!"),
+            Event::Quit => break,
+            Event::Restart => game.restart(),
+            Event::MoveUp
+            | Event::MoveDown
+            | Event::MoveLeft
+            | Event::MoveRight
+                if game.is_game_over() =>
+            {
+                continue;
+            }
+            Event::MoveUp => game.apply_move(GameAction::Up)?,
+            Event::MoveDown => game.apply_move(GameAction::Down)?,
+            Event::MoveLeft => game.apply_move(GameAction::Left)?,
+            Event::MoveRight => game.apply_move(GameAction::Right)?,
         };
 
-        if outcome.changed || outcome.game_over {
+        if force_redraw || outcome.changed || outcome.game_over {
             terminal.draw(|frame| render(&outcome, frame))?;
         }
     }
@@ -211,7 +212,7 @@ async fn main() -> Result<()> {
     let terminal = ratatui::init();
     let (tx, rx): (Sender<Event>, Receiver<Event>) = channel(BUFSIZE);
     spawn_blocking(move || input_loop(tx));
-    event_loop(rx, terminal).await?;
+    let result = event_loop(rx, terminal).await;
     ratatui::restore();
-    Ok(())
+    result
 }
