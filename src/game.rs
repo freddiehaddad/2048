@@ -102,12 +102,12 @@ impl Game {
 
         self.update_score(&mut outcome);
 
-        self.check_game_over(&mut outcome);
-
         if outcome.changed && !self.is_game_over() {
             self.spawn_random_tile(&mut outcome);
             self.update_board(&mut outcome);
         }
+
+        self.check_game_over(&mut outcome);
 
         outcome
     }
@@ -252,22 +252,19 @@ impl Game {
     }
 
     fn spawn_random_tile(&self, outcome: &mut ActionOutcome) {
-        let mut cells: [Option<(usize, usize)>; 1] = [None; 1];
-
         // Pick random coordinates on the board to place the starting tiles.
-        outcome
+        let (row, col) = outcome
             .iter_cells()
             .filter(|(_, cell)| cell.value.is_none())
-            .map(|(pos, _)| Some(pos))
-            .sample_fill(&mut rand::rng(), &mut cells);
+            .map(|(pos, _)| pos)
+            .choose(&mut rand::rng())
+            .expect("Unable to spawn a random tile!");
 
         // Place the starting tiles on the board.
-        for (row, col) in cells.into_iter().flatten() {
-            outcome.board[row][col] = CellResult {
-                value: Some(Game::spawn_tile()),
-                ..Default::default()
-            };
-        }
+        outcome.board[row][col] = CellResult {
+            value: Some(Game::spawn_tile()),
+            ..Default::default()
+        };
     }
 
     // Initializes the board with the starting tiles in random positions.

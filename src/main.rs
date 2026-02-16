@@ -39,17 +39,24 @@ fn calculate_game_dimensions() -> (u16, u16) {
 }
 
 // Render the border and title around the tiles area
-fn render_board(area: Rect, frame: &mut Frame) {
+fn render_board(outcome: &ActionOutcome, area: Rect, frame: &mut Frame) {
+    let style = if outcome.game_over {
+        Style::new().red()
+    } else {
+        Style::new()
+    };
+
     frame.render_widget(
         Block::bordered()
             .border_type(BorderType::Thick)
+            .border_style(style)
             .title(TITLE),
         area,
     );
 }
 
 fn render_tiles(
-    outcome: &[[CellResult; BOARD_SIZE]; BOARD_SIZE],
+    board: &[[CellResult; BOARD_SIZE]; BOARD_SIZE],
     area: Rect,
     frame: &mut Frame,
 ) {
@@ -68,7 +75,7 @@ fn render_tiles(
         }
     }));
 
-    // Render each cell with its coordinates for demonstration purposes
+    // Iterate over the row rectangles and render the tiles within each row
     for (row, row_rect) in rows_rects.into_iter().enumerate() {
         let col_rects: [Rect; BOARD_SIZE * 2 - 1] = cols_layout.areas(row_rect);
 
@@ -84,7 +91,7 @@ fn render_tiles(
             })
         {
             // Get the cell result for the current coordinates
-            let result = &outcome[row][col];
+            let result = &board[row][col];
 
             // Determine the style based on whether the cell was merged in the last move
             let style = if result.merged {
@@ -128,7 +135,7 @@ fn render(outcome: &ActionOutcome, frame: &mut Frame) {
     ]);
     let [tiles_area, scores_area] = game_layout.areas(game_area);
 
-    render_board(tiles_area, frame);
+    render_board(&outcome, tiles_area, frame);
     render_tiles(&outcome.board, tiles_area, frame);
     render_score(outcome.score, scores_area, frame);
 }
@@ -171,20 +178,30 @@ async fn event_loop(
     mut terminal: DefaultTerminal,
 ) -> Result<()> {
     let mut game = Game::new();
-
     terminal.draw(|frame| render(&game.outcome(), frame))?;
 
     while let Some(e) = rx.recv().await {
+        if e == Event::Quit {
+            break;
+        }
+
+        if e == Event::Restart {
+            let outcome = game.restart();
+            terminal.draw(|frame| render(&outcome, frame))?;
+            continue;
+        }
+
         let outcome = match e {
             Event::MoveUp => game.apply_move(GameAction::Up),
             Event::MoveDown => game.apply_move(GameAction::Down),
             Event::MoveLeft => game.apply_move(GameAction::Left),
             Event::MoveRight => game.apply_move(GameAction::Right),
-            Event::Restart => game.restart(),
-            Event::Quit => break,
+            _ => panic!("Should never happen!"),
         };
 
-        terminal.draw(|frame| render(&outcome, frame))?;
+        if outcome.changed || outcome.game_over {
+            terminal.draw(|frame| render(&outcome, frame))?;
+        }
     }
     Ok(())
 }
