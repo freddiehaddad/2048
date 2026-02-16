@@ -50,7 +50,8 @@ fn render_board(outcome: &ActionOutcome, area: Rect, frame: &mut Frame) {
         Block::bordered()
             .border_type(BorderType::Thick)
             .border_style(style)
-            .title(TITLE),
+            .title(TITLE)
+            .title_style(Style::new().yellow()),
         area,
     );
 }
