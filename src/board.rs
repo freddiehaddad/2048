@@ -59,8 +59,10 @@ mod tests {
             [None, None, None, Some(64)],
         ]);
 
-        let cells: Vec<((usize, usize), Option<u32>)> =
-            board.iter_cells().map(|(coord, value)| (coord, *value)).collect();
+        let cells: Vec<((usize, usize), Option<u32>)> = board
+            .iter_cells()
+            .map(|(coord, value)| (coord, *value))
+            .collect();
 
         let expected_coords: Vec<(usize, usize)> = (0..BOARD_SIZE)
             .flat_map(|row| (0..BOARD_SIZE).map(move |col| (row, col)))

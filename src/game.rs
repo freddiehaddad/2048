@@ -668,13 +668,13 @@ mod tests {
             .iter()
             .enumerate()
             .flat_map(|(row, cols)| {
-                cols.iter()
-                    .enumerate()
-                    .filter_map(move |(col, value)| match (row, col, value) {
+                cols.iter().enumerate().filter_map(move |(col, value)| {
+                    match (row, col, value) {
                         (0, 0, Some(4)) => None,
                         (_, _, Some(v)) => Some(*v),
                         _ => None,
-                    })
+                    }
+                })
             })
             .collect();
 
