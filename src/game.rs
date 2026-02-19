@@ -106,18 +106,24 @@ impl Game {
 
         let mut outcome = ActionOutcome::default();
         self.slide_and_merge(direction, &mut outcome);
-        self.update_board(&mut outcome);
 
-        self.update_score(&mut outcome);
-
+        self.update_changed_flag(&mut outcome);
         if outcome.changed {
             self.spawn_random_tile(&mut outcome)?;
-            self.update_board(&mut outcome);
+            self.commit_board(&outcome);
         }
 
+        self.update_score(&mut outcome);
         self.check_game_over(&mut outcome);
 
         Ok(outcome)
+    }
+
+    fn update_changed_flag(&self, outcome: &mut ActionOutcome) {
+        let changed = outcome
+            .iter_cells()
+            .any(|((row, col), cell)| cell.value != self.board.cell(row, col));
+        outcome.changed = changed;
     }
 
     fn update_score(&mut self, outcome: &mut ActionOutcome) {
@@ -238,15 +244,12 @@ impl Game {
         self.game_over |= outcome.game_over;
     }
 
-    fn update_board(&mut self, outcome: &mut ActionOutcome) {
-        let mut changed = false;
+    fn commit_board(&mut self, outcome: &ActionOutcome) {
         for ((row, col), cell) in outcome.iter_cells() {
             if cell.value != self.board.cell(row, col) {
                 *self.board.cell_mut(row, col) = cell.value;
-                changed = true;
             }
         }
-        outcome.changed |= changed;
     }
 
     // Spawns a new tile with the appropriate probability distribution.
@@ -461,8 +464,8 @@ mod tests {
     }
 
     #[test]
-    fn update_board_sets_changed_only_when_board_differs() {
-        let mut game = game_from_rows(
+    fn update_changed_flag_sets_changed_only_when_board_differs() {
+        let game = game_from_rows(
             [
                 [Some(2), None, None, None],
                 [None, None, None, None],
@@ -474,13 +477,34 @@ mod tests {
         );
         let mut outcome = game.outcome();
 
-        game.update_board(&mut outcome);
+        game.update_changed_flag(&mut outcome);
         assert!(!outcome.changed);
 
         outcome.board[0][0].value = Some(8);
-        game.update_board(&mut outcome);
+        game.update_changed_flag(&mut outcome);
 
         assert!(outcome.changed);
+    }
+
+    #[test]
+    fn commit_board_applies_board_values_without_mutating_changed_flag() {
+        let mut game = game_from_rows(
+            [
+                [Some(2), None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+                [None, None, None, None],
+            ],
+            0,
+            false,
+        );
+        let mut outcome = game.outcome();
+        outcome.board[0][0].value = Some(8);
+        outcome.changed = false;
+
+        game.commit_board(&outcome);
+
+        assert!(!outcome.changed);
         assert_eq!(game.board.cell(0, 0), Some(8));
     }
 
